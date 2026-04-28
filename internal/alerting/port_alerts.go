@@ -43,3 +43,13 @@ func NewConflictAlert(port uint16, protocol string, pid1, pid2 int) Alert {
 		Details: details,
 	}
 }
+
+// NewPrivilegedPortAlert creates a warning alert when a process binds a
+// privileged port (ports 1–1023), which typically requires elevated permissions.
+func NewPrivilegedPortAlert(port uint16, protocol string) Alert {
+	return Alert{
+		Level:   Warning,
+		Message: fmt.Sprintf("privileged port bound: %s port %d", protocol, port),
+		Details: portDetails(port, protocol, "privileged_bind"),
+	}
+}
