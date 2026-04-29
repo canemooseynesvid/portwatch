@@ -36,3 +36,12 @@ func CollectorHandler() (Handler, *[]Alert) {
 	}
 	return h, &collected
 }
+
+// MultiHandler returns a Handler that forwards each alert to all provided handlers.
+func MultiHandler(handlers ...Handler) Handler {
+	return func(a Alert) {
+		for _, h := range handlers {
+			h(a)
+		}
+	}
+}
