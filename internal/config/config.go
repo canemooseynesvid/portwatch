@@ -1,45 +1,45 @@
 package config
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
+
+	"github.com/BurntSushi/toml"
 )
 
-// Config holds the portwatch daemon configuration.
+// PortRule identifies a single port + protocol pair used in allow/deny lists.
+type PortRule struct {
+	Port     int    `toml:"port"`
+	Protocol string `toml:"protocol"`
+}
+
+// Config holds all runtime configuration for portwatch.
 type Config struct {
-	// PollInterval is how often the scanner checks for port changes.
-	PollInterval time.Duration `json:"poll_interval"`
-
-	// AllowedPorts is a list of ports that are expected/allowed to be bound.
-	// Bindings on these ports will be reported at Info level instead of Warn.
-	AllowedPorts []uint16 `json:"allowed_ports"`
-
-	// PrivilegedThreshold is the port number below which a binding is
-	// considered privileged. Defaults to 1024.
-	PrivilegedThreshold uint16 `json:"privileged_threshold"`
-
-	// LogFile is an optional path to write alerts to. If empty, stdout is used.
-	LogFile string `json:"log_file"`
-
-	// Protocols lists which protocols to monitor ("tcp", "tcp6", "udp", "udp6").
-	// If empty, all supported protocols are monitored.
-	Protocols []string `json:"protocols"`
+	PollInterval time.Duration `toml:"poll_interval"`
+	LogLevel     string        `toml:"log_level"`
+	AlertOnNew   bool          `toml:"alert_on_new"`
+	AlertOnClose bool          `toml:"alert_on_close"`
+	Privileged   bool          `toml:"alert_privileged"`
+	AllowedPorts []PortRule    `toml:"allowed_ports"`
+	DeniedPorts  []PortRule    `toml:"denied_ports"`
 }
 
 // Default returns a Config populated with sensible defaults.
 func Default() *Config {
 	return &Config{
-		PollInterval:        5 * time.Second,
-		AllowedPorts:        []uint16{},
-		PrivilegedThreshold: 1024,
-		LogFile:             "",
-		Protocols:           []string{"tcp", "tcp6", "udp", "udp6"},
+		PollInterval: 5 * time.Second,
+		LogLevel:     "info",
+		AlertOnNew:   true,
+		AlertOnClose: false,
+		Privileged:   true,
+		AllowedPorts: []PortRule{},
+		DeniedPorts:  []PortRule{},
 	}
 }
 
-// Load reads a JSON config file from path and merges it over the defaults.
+// Load reads a TOML config file from path, merging it over the defaults.
 func Load(path string) (*Config, error) {
 	cfg := Default()
 
@@ -49,42 +49,36 @@ func Load(path string) (*Config, error) {
 	}
 	defer f.Close()
 
-	dec := json.NewDecoder(f)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(cfg); err != nil {
-		return nil, fmt.Errorf("config: decode %q: %w", path, err)
+	dec := toml.NewDecoder(f)
+	meta, err := dec.Decode(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("config: decode: %w", err)
+	}
+	if len(meta.Undecoded()) > 0 {
+		return nil, fmt.Errorf("config: unknown fields: %v", meta.Undecoded())
 	}
 
-	if err := cfg.Validate(); err != nil {
-		return nil, fmt.Errorf("config: validate: %w", err)
+	if err := validate(cfg); err != nil {
+		return nil, err
 	}
-
 	return cfg, nil
 }
 
-// Validate checks that the configuration values are sensible.
-func (c *Config) Validate() error {
-	if c.PollInterval <= 0 {
-		return fmt.Errorf("poll_interval must be positive, got %v", c.PollInterval)
+func validate(cfg *Config) error {
+	if cfg.PollInterval < time.Second {
+		return errors.New("config: poll_interval must be >= 1s")
 	}
-	if c.PrivilegedThreshold == 0 {
-		return fmt.Errorf("privileged_threshold must be > 0")
+	validLevels := map[string]bool{"debug": true, "info": true, "warn": true, "error": true}
+	if !validLevels[cfg.LogLevel] {
+		return fmt.Errorf("config: unknown log_level %q", cfg.LogLevel)
 	}
-	allowed := map[string]bool{"tcp": true, "tcp6": true, "udp": true, "udp6": true}
-	for _, p := range c.Protocols {
-		if !allowed[p] {
-			return fmt.Errorf("unknown protocol %q", p)
+	for _, r := range append(cfg.AllowedPorts, cfg.DeniedPorts...) {
+		if r.Port < 1 || r.Port > 65535 {
+			return fmt.Errorf("config: port %d out of range", r.Port)
+		}
+		if r.Protocol != "tcp" && r.Protocol != "udp" {
+			return fmt.Errorf("config: unknown protocol %q", r.Protocol)
 		}
 	}
 	return nil
-}
-
-// IsAllowedPort reports whether port is in the AllowedPorts list.
-func (c *Config) IsAllowedPort(port uint16) bool {
-	for _, p := range c.AllowedPorts {
-		if p == port {
-			return true
-		}
-	}
-	return false
 }
