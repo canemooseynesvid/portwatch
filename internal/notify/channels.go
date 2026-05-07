@@ -63,3 +63,29 @@ func (e *ExecChannel) Send(subject, body string) error {
 	}
 	return nil
 }
+
+// MultiChannel fans out notifications to multiple channels.
+// All channels are attempted even if one fails; all errors are collected
+// and returned as a single combined error.
+type MultiChannel struct {
+	channels []Channel
+}
+
+func NewMultiChannel(channels ...Channel) *MultiChannel {
+	return &MultiChannel{channels: channels}
+}
+
+func (m *MultiChannel) Name() string { return "multi" }
+
+func (m *MultiChannel) Send(subject, body string) error {
+	var errs []string
+	for _, ch := range m.channels {
+		if err := ch.Send(subject, body); err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", ch.Name(), err))
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("multi channel errors: %s", strings.Join(errs, "; "))
+	}
+	return nil
+}
