@@ -55,6 +55,20 @@ func (l *Limiter) Allow(key string) bool {
 	return true
 }
 
+// Remaining returns the number of events still allowed for the given key in
+// the current window. If the key has no active bucket, the full limit is returned.
+func (l *Limiter) Remaining(key string) int {
+	now := time.Now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	b, ok := l.buckets[key]
+	if !ok || now.After(b.windowEnd) {
+		return l.max
+	}
+	return l.max - b.count
+}
+
 // Reset clears the rate-limit state for the given key.
 func (l *Limiter) Reset(key string) {
 	l.mu.Lock()
