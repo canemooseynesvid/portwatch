@@ -36,6 +36,7 @@ func (w *WriterChannel) Send(subject, body string) error {
 }
 
 // ExecChannel runs an external command, passing subject and body as env vars.
+// The command receives PORTWATCH_SUBJECT and PORTWATCH_BODY environment variables.
 type ExecChannel struct {
 	command string
 	args    []string
@@ -57,5 +58,8 @@ func (e *ExecChannel) Send(subject, body string) error {
 	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("exec channel %q failed: %w", e.command, err)
+	}
+	return nil
 }
