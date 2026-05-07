@@ -1,57 +1,51 @@
 package watchlist
 
 import (
-	"portwatch/internal/alerting"
-	"portwatch/internal/portscanner"
+	"fmt"
+
+	"github.com/example/portwatch/internal/alerting"
+	"github.com/example/portwatch/internal/portscanner"
 )
 
-// Checker evaluates scanner entries against a Watchlist and emits alerts
-// when a watched port is detected as newly bound.
+// Checker watches a Watchlist and emits alerts when watched ports appear or disappear.
 type Checker struct {
 	wl      *Watchlist
 	alerter *alerting.Alerter
 }
 
 // NewChecker creates a Checker backed by the given Watchlist and Alerter.
-func NewChecker(wl *Watchlist, a *alerting.Alerter) *Checker {
-	return &Checker{wl: wl, alerter: a}
+func NewChecker(wl *Watchlist, alerter *alerting.Alerter) *Checker {
+	return &Checker{wl: wl, alerter: alerter}
 }
 
-// CheckAdded fires a warning-level alert for every newly-added scanner entry
-// that appears on the watchlist.
-func (c *Checker) CheckAdded(entries []portscanner.Entry) {
-	for _, e := range entries {
-		if we, ok := c.wl.Contains(e); ok {
-			alert := alerting.NewPortBindAlert(e)
-			alert.Level = alerting.Warning
-			alert.Message = formatWatchedMessage(we, e)
-			c.alerter.Send(alert)
-		}
+// CheckAdded inspects a newly observed port entry and emits an Info alert if it
+// matches a watched port.
+func (c *Checker) CheckAdded(e portscanner.Entry) {
+	if !c.wl.Contains(e.Port, e.Protocol) {
+		return
 	}
+	alert := alerting.NewPortBindAlert(e)
+	alert.Level = alerting.LevelInfo
+	alert.Message = formatWatchedMessage(e)
+	c.alerter.Send(alert)
 }
 
-// CheckRemoved fires an info-level alert when a watched port is no longer bound.
-func (c *Checker) CheckRemoved(entries []portscanner.Entry) {
-	for _, e := range entries {
-		if we, ok := c.wl.Contains(e); ok {
-			alert := alerting.NewPortClosedAlert(e)
-			alert.Level = alerting.Info
-			alert.Message = formatWatchedClosedMessage(we, e)
-			c.alerter.Send(alert)
-		}
+// CheckRemoved inspects a recently closed port entry and emits an Info alert if
+// it matches a watched port.
+func (c *Checker) CheckRemoved(e portscanner.Entry) {
+	if !c.wl.Contains(e.Port, e.Protocol) {
+		return
 	}
+	alert := alerting.NewPortClosedAlert(e)
+	alert.Level = alerting.LevelInfo
+	alert.Message = formatWatchedClosedMessage(e)
+	c.alerter.Send(alert)
 }
 
-func formatWatchedMessage(we Entry, e portscanner.Entry) string {
-	if we.Label != "" {
-		return "watched port bound: " + we.Label
-	}
-	return "watched port bound"
+func formatWatchedMessage(e portscanner.Entry) string {
+	return fmt.Sprintf("watched port bound: %s/%d (pid %d)", e.Protocol, e.Port, e.PID)
 }
 
-func formatWatchedClosedMessage(we Entry, e portscanner.Entry) string {
-	if we.Label != "" {
-		return "watched port released: " + we.Label
-	}
-	return "watched port released"
+func formatWatchedClosedMessage(e portscanner.Entry) string {
+	return fmt.Sprintf("watched port closed: %s/%d (pid %d)", e.Protocol, e.Port, e.PID)
 }

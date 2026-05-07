@@ -1,94 +1,98 @@
 package watchlist_test
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 
-	"portwatch/internal/alerting"
-	"portwatch/internal/portscanner"
-	"portwatch/internal/watchlist"
+	"github.com/example/portwatch/internal/alerting"
+	"github.com/example/portwatch/internal/portscanner"
+	"github.com/example/portwatch/internal/watchlist"
 )
 
 func TestWatchlist_AddAndContains(t *testing.T) {
 	wl := watchlist.New()
-	wl.Add(watchlist.Entry{Port: 22, Protocol: "tcp", Label: "SSH"})
-
-	se := portscanner.Entry{Protocol: "tcp", LocalPort: 22}
-	e, ok := wl.Contains(se)
-	if !ok {
-		t.Fatal("expected watchlist to contain port 22/tcp")
+	wl.Add(8080, "tcp")
+	if !wl.Contains(8080, "tcp") {
+		t.Fatal("expected watchlist to contain 8080/tcp")
 	}
-	if e.Label != "SSH" {
-		t.Errorf("expected label SSH, got %q", e.Label)
+	if wl.Contains(9090, "tcp") {
+		t.Fatal("did not expect watchlist to contain 9090/tcp")
 	}
 }
 
 func TestWatchlist_Remove(t *testing.T) {
 	wl := watchlist.New()
-	wl.Add(watchlist.Entry{Port: 80, Protocol: "tcp", Label: "HTTP"})
-	wl.Remove("tcp", 80)
-
-	se := portscanner.Entry{Protocol: "tcp", LocalPort: 80}
-	if _, ok := wl.Contains(se); ok {
-		t.Fatal("expected port 80/tcp to be removed")
+	wl.Add(443, "tcp")
+	wl.Remove(443, "tcp")
+	if wl.Contains(443, "tcp") {
+		t.Fatal("expected 443/tcp to be removed")
 	}
 }
 
 func TestWatchlist_Len(t *testing.T) {
 	wl := watchlist.New()
-	if wl.Len() != 0 {
-		t.Fatalf("expected 0, got %d", wl.Len())
-	}
-	wl.Add(watchlist.Entry{Port: 443, Protocol: "tcp"})
-	wl.Add(watchlist.Entry{Port: 53, Protocol: "udp"})
-	if wl.Len() != 2 {
-		t.Fatalf("expected 2, got %d", wl.Len())
+	wl.Add(80, "tcp")
+	wl.Add(443, "tcp")
+	wl.Add(53, "udp")
+	if wl.Len() != 3 {
+		t.Fatalf("expected len 3, got %d", wl.Len())
 	}
 }
 
 func TestWatchlist_All(t *testing.T) {
 	wl := watchlist.New()
-	wl.Add(watchlist.Entry{Port: 8080, Protocol: "tcp", Label: "dev"})
-	all := wl.All()
-	if len(all) != 1 {
-		t.Fatalf("expected 1 entry, got %d", len(all))
-	}
-	if all[0].Label != "dev" {
-		t.Errorf("unexpected label: %q", all[0].Label)
+	wl.Add(22, "tcp")
+	wl.Add(53, "udp")
+	entries := wl.All()
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
 	}
 }
 
 func TestChecker_CheckAdded_EmitsAlert(t *testing.T) {
 	wl := watchlist.New()
-	wl.Add(watchlist.Entry{Port: 22, Protocol: "tcp", Label: "SSH"})
+	wl.Add(8080, "tcp")
 
-	var collected []alerting.Alert
-	alerter := alerting.NewAlerter(alerting.CollectorHandler(&collected))
+	var buf bytes.Buffer
+	alerter := alerting.NewAlerter(alerting.WriterHandler(&buf))
 	checker := watchlist.NewChecker(wl, alerter)
 
-	checker.CheckAdded([]portscanner.Entry{
-		{Protocol: "tcp", LocalPort: 22, PID: 1234},
-	})
+	e := portscanner.Entry{Port: 8080, Protocol: "tcp", PID: 42}
+	checker.CheckAdded(e)
 
-	if len(collected) != 1 {
-		t.Fatalf("expected 1 alert, got %d", len(collected))
+	if !strings.Contains(buf.String(), "8080") {
+		t.Fatalf("expected alert output to mention port 8080, got: %s", buf.String())
 	}
-	if collected[0].Level != alerting.Warning {
-		t.Errorf("expected Warning level, got %v", collected[0].Level)
+}
+
+func TestChecker_CheckRemoved_EmitsAlert(t *testing.T) {
+	wl := watchlist.New()
+	wl.Add(9090, "tcp")
+
+	var buf bytes.Buffer
+	alerter := alerting.NewAlerter(alerting.WriterHandler(&buf))
+	checker := watchlist.NewChecker(wl, alerter)
+
+	e := portscanner.Entry{Port: 9090, Protocol: "tcp", PID: 7}
+	checker.CheckRemoved(e)
+
+	if !strings.Contains(buf.String(), "closed") {
+		t.Fatalf("expected alert output to mention 'closed', got: %s", buf.String())
 	}
 }
 
 func TestChecker_CheckAdded_NoAlertForUnwatched(t *testing.T) {
 	wl := watchlist.New()
 
-	var collected []alerting.Alert
-	alerter := alerting.NewAlerter(alerting.CollectorHandler(&collected))
+	var buf bytes.Buffer
+	alerter := alerting.NewAlerter(alerting.WriterHandler(&buf))
 	checker := watchlist.NewChecker(wl, alerter)
 
-	checker.CheckAdded([]portscanner.Entry{
-		{Protocol: "tcp", LocalPort: 9999},
-	})
+	e := portscanner.Entry{Port: 3000, Protocol: "tcp", PID: 99}
+	checker.CheckAdded(e)
 
-	if len(collected) != 0 {
-		t.Fatalf("expected no alerts, got %d", len(collected))
+	if buf.Len() != 0 {
+		t.Fatalf("expected no output for unwatched port, got: %s", buf.String())
 	}
 }
