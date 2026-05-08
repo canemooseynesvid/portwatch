@@ -3,6 +3,7 @@ package lifecycle_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -93,11 +94,8 @@ func TestStart_ErrorMessageContainsHookName(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from failing start hook")
 	}
-	if !errors.Is(err, err) {
-		t.Fatal("expected wrapped error")
-	}
 	// Verify the hook name appears in the error message for easier debugging.
-	if msg := err.Error(); len(msg) == 0 {
-		t.Fatal("expected non-empty error message")
+	if msg := err.Error(); !strings.Contains(msg, "my-hook") {
+		t.Fatalf("expected error message to contain hook name 'my-hook', got: %q", msg)
 	}
 }
