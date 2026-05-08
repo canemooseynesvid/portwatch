@@ -60,6 +60,11 @@ func (e *Evaluator) Evaluate(port uint16, protocol string) Verdict {
 	return VerdictUnknown
 }
 
+// Stats returns the number of entries in the allow and deny lists.
+func (e *Evaluator) Stats() (allowCount, denyCount int) {
+	return len(e.allowed), len(e.denied)
+}
+
 func portKey(port int, protocol string) string {
 	return fmt.Sprintf("%s:%d", protocol, port)
 }
