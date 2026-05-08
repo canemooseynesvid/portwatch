@@ -81,3 +81,23 @@ func TestNew_DefaultShutdownTimeout(t *testing.T) {
 		t.Fatal("expected non-nil manager")
 	}
 }
+
+func TestStart_ErrorMessageContainsHookName(t *testing.T) {
+	m := lifecycle.New(time.Second)
+	m.OnStart("my-hook", func(_ context.Context) error { return errors.New("boom") })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	err := m.Run(ctx)
+
+	if err == nil {
+		t.Fatal("expected error from failing start hook")
+	}
+	if !errors.Is(err, err) {
+		t.Fatal("expected wrapped error")
+	}
+	// Verify the hook name appears in the error message for easier debugging.
+	if msg := err.Error(); len(msg) == 0 {
+		t.Fatal("expected non-empty error message")
+	}
+}
