@@ -90,3 +90,22 @@ func TestPurge_RemovesExpired(t *testing.T) {
 		t.Fatalf("expected 0 keys after purge, got %d", th.Len())
 	}
 }
+
+func TestPurge_RetainsActiveKeys(t *testing.T) {
+	base := time.Now()
+	clock := base
+	th := throttle.NewWithClock(2, time.Second, func() time.Time { return clock })
+
+	th.Allow("active")
+	th.Allow("expired")
+
+	// Advance time so only keys whose window started before (clock - window) are expired.
+	// "active" gets a fresh Allow call after the clock advances, keeping it current.
+	clock = base.Add(5 * time.Second)
+	th.Allow("active") // refresh the window for "active"
+
+	th.Purge()
+	if th.Len() != 1 {
+		t.Fatalf("expected 1 active key after purge, got %d", th.Len())
+	}
+}
