@@ -59,6 +59,21 @@ func (t *Throttle) Allow(key string) bool {
 	return true
 }
 
+// Remaining returns the number of tokens left for the given key in the current
+// window. If the key is unknown or its window has expired, the full burst count
+// is returned since the next Allow call would start a fresh window.
+func (t *Throttle) Remaining(key string) int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	now := t.clock()
+	e, ok := t.bucket[key]
+	if !ok || now.Sub(e.lastRefil) >= t.window {
+		return t.burst
+	}
+	return e.tokens
+}
+
 // Reset clears the throttle state for the given key.
 func (t *Throttle) Reset(key string) {
 	t.mu.Lock()
