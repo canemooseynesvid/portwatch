@@ -16,6 +16,8 @@ func NewAlertAdapter(logger *Logger) *AlertAdapter {
 }
 
 // Handle converts an alerting.Alert into an audit Event and records it.
+// Write errors are intentionally suppressed so a broken log file never
+// disrupts the monitoring loop.
 func (a *AlertAdapter) Handle(al alerting.Alert) {
 	lvl := levelFromAlert(al)
 	ev := Event{
@@ -26,17 +28,20 @@ func (a *AlertAdapter) Handle(al alerting.Alert) {
 		Protocol:  al.Protocol,
 		PID:       al.PID,
 	}
-	// Best-effort: ignore write errors so a broken log file never
-	// disrupts the monitoring loop.
 	_ = a.logger.Record(ev) //nolint:errcheck
 }
 
+// levelFromAlert maps an alerting.Level to its corresponding audit Level.
+// Unknown alerting levels are treated as LevelAlert to ensure they are
+// never silently downgraded.
 func levelFromAlert(al alerting.Alert) Level {
 	switch al.Level {
 	case alerting.LevelInfo:
 		return LevelInfo
 	case alerting.LevelWarn:
 		return LevelWarn
+	case alerting.LevelAlert:
+		return LevelAlert
 	default:
 		return LevelAlert
 	}
